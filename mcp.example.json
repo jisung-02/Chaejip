@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "chaejip": {
+      "command": "/ABSOLUTE/PATH/Chaejip/.venv/bin/crawler-mcp",
+      "args": [
+        "--config",
+        "/ABSOLUTE/PATH/Chaejip/sources.local.json",
+        "--data-dir",
+        "/ABSOLUTE/PATH/Chaejip/.crawler"
+      ]
+    }
+  }
+}

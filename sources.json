@@ -1,0 +1,86 @@
+[
+  {
+    "id": "geeknews",
+    "name": "긱뉴스 최신글",
+    "kind": "web",
+    "url": "https://news.hada.io/new",
+    "item_selector": ".topic_row",
+    "title_selector": ".topictitle h2",
+    "link_selector": "a[href^='topic?id=']:not([href*='go='])",
+    "author_selector": ".topicinfo a[href^='/@']",
+    "detail_selector": ".topic_contents",
+    "next_selector": "a[href^='/new?page=']",
+    "max_pages": 1,
+    "max_items": 10
+  },
+  {
+    "id": "hackernews-security",
+    "name": "The Hacker News 보안 뉴스",
+    "kind": "web",
+    "url": "https://thehackernews.com/",
+    "item_selector": ".body-post:has(a.story-link[href^='https://thehackernews.com/'])",
+    "title_selector": ".home-title",
+    "link_selector": "a.story-link",
+    "detail_selector": ".post-body",
+    "max_pages": 1,
+    "max_items": 5
+  },
+  {
+    "id": "github",
+    "name": "GitHub 이슈 (Playwright 저장소 예시)",
+    "kind": "web",
+    "url": "https://github.com/microsoft/playwright/issues",
+    "item_selector": "li:has([data-testid='issue-pr-title-link'])",
+    "title_selector": "[data-testid='issue-pr-title-link']",
+    "link_selector": "[data-testid='issue-pr-title-link']",
+    "author_selector": "a[href*='author%3A']",
+    "detail_selector": ".markdown-body",
+    "max_pages": 1,
+    "max_items": 5,
+    "note": "URL을 모니터링할 저장소의 /issues 주소로 변경하세요. 이슈 최초 본문만 수집하며 댓글은 포함하지 않습니다."
+  },
+  {
+    "id": "kakao",
+    "name": "카카오톡 오픈채팅 원문",
+    "kind": "kakao_db",
+    "enabled": false,
+    "room_title": "읽을 오픈채팅방의 정확한 이름",
+    "note": "macOS 전용입니다. 계정·앱 데이터 접근 권한·room_title을 설정한 뒤 활성화하세요."
+  },
+  {
+    "id": "reddit",
+    "name": "Reddit (설정 템플릿, 미검증)",
+    "kind": "web",
+    "enabled": false,
+    "url": "https://www.reddit.com/r/cybersecurity/new/",
+    "item_selector": "shreddit-post",
+    "title_selector": "[slot='title']",
+    "link_selector": "a[slot='title']",
+    "max_items": 10,
+    "note": "상업적 접근 조건과 로그인을 확인하고 실제 DOM에 맞춰 선택자를 검증한 뒤 활성화하세요. 이 템플릿은 동작 검증되지 않았습니다."
+  },
+  {
+    "id": "linkedin",
+    "name": "LinkedIn (설정 템플릿, 미검증)",
+    "kind": "web",
+    "enabled": false,
+    "url": "https://www.linkedin.com/feed/",
+    "item_selector": ".feed-shared-update-v2",
+    "title_selector": ".update-components-text",
+    "link_selector": "a[href*='/feed/update/']",
+    "max_items": 10,
+    "note": "자동 수집 제한과 허용된 접근 경로를 확인하세요. 로그인만으로 동작을 보장하지 않으며 선택자 템플릿은 미검증입니다."
+  },
+  {
+    "id": "bleepingcomputer",
+    "name": "BleepingComputer (현재 접근 차단)",
+    "kind": "web",
+    "enabled": false,
+    "url": "https://www.bleepingcomputer.com/news/security/",
+    "item_selector": ".bc_latest_news_text",
+    "title_selector": "h4",
+    "link_selector": "h4 a",
+    "max_items": 10,
+    "note": "현재 Mac의 Chromium 접근은 HTTP 403입니다. 선택자는 미검증이며 우회 기능은 없습니다."
+  }
+]
