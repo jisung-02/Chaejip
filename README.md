@@ -131,7 +131,8 @@ uv run crawler-mcp --config sources.local.json --login github
 3. `brew install sqlcipher`로 SQLCipher를 설치합니다.
 4. `sources.local.json`에서 `kakao`의 `room_title`을 정확한 오픈채팅방 이름으로 바꾸고
    `enabled`를 `true`로 설정합니다.
-5. MCP의 `collect(source_id="kakao")`를 호출합니다.
+5. 아래 최초 계정 설정 명령을 실행합니다.
+6. MCP의 `collect(source_id="kakao")`를 호출합니다.
 
 ```json
 {
@@ -161,11 +162,42 @@ System Events 자동화 권한도 사용하지 않습니다.**
 시스템 버전에 따라 설정 명칭은 조금 다를 수 있습니다. 권한 오류가 없으면 이 설정을
 추가로 변경할 필요가 없습니다. AI 앱과 터미널의 권한은 다를 수 있으므로 실제 실행 앱을 확인하세요.
 
-### 계정 식별 정보를 찾지 못할 때
+### 최초 계정 설정 자동화
 
-기존 카카오톡 설정에서 숫자 계정 ID를 찾을 수 있는 경우 자동으로 처리합니다.
-**모든 설치 환경에서 자동 설정되는 것은 아닙니다.** 계정 후보를 찾지 못하거나 DB를 열지
-못하면 수집을 중단합니다. 기본 수집 명령은 계정 ID 복구·대입 탐색을 수행하지 않습니다.
+프로젝트 폴더에서 실행합니다.
+
+```sh
+uv run crawler-mcp --config sources.local.json --setup-kakao kakao
+```
+
+이 명령은 다음 과정을 자동으로 처리합니다.
+
+1. 현재 Mac의 카카오톡 설정에서 기존 계정 정보를 찾습니다.
+2. 정보가 없으면 현재 계정의 로컬 해시와 숫자 ID 후보를 비교합니다.
+   탐색은 최대 5분·ID 1~10억 범위로 제한하며, 처음 한 번 CPU를 사용할 수 있습니다.
+3. 계정 ID와 이 Mac의 기기 정보로 키를 계산하고 **실제 DB가 열리는지 검증**합니다.
+4. 성공하면 `.crawler/kakao-account.json`을 권한 0600으로 저장하고,
+   개인 소스 설정의 `account_file` 경로를 자동으로 연결합니다.
+
+재실행하면 저장된 ID를 재사용해 검증합니다. ID나 키를 화면·MCP 결과에 출력하지 않으며
+키는 파일에 저장하지 않습니다. 수집 대상 방과 활성화 여부는 변경하지 않습니다.
+설정 중 계정이 바뀌거나 활성 계정이 모호하면 중단합니다.
+일반 MCP `collect`에는 이 탐색이 들어가지 않습니다.
+
+처음 탐색할 때 macOS 기본 CommonCrypto를 사용하는 작은 도우미를 컴파일합니다.
+Xcode Command Line Tools가 없다면 아래 명령으로 설치를 완료한 뒤 다시 실행하세요.
+전체 Xcode 앱은 필요하지 않습니다.
+
+```sh
+xcode-select --install
+```
+
+macOS 권한 승인·카카오톡 로그인·읽을 방 지정은 사용자가 해야 합니다.
+숫자 ID가 탐색 범위 밖이거나 제한 시간 안에 찾지 못하면 실패하며 무한 재시도하지 않습니다.
+다른 Mac에서도 그 Mac에서 명령을 실행해야 합니다. 기존 계정 파일이나 도우미 바이너리를
+옮겨 쓸 필요가 없습니다.
+
+### 직접 확인한 계정 ID 사용 (선택)
 
 현재 계정의 숫자 ID를 별도로 확인한 경우에만 `account_file`을 사용할 수 있습니다.
 이 ID는 이메일·전화번호·카카오디벨로퍼스 앱 ID가 아닙니다. 임의 값을 넣지 마세요.
@@ -191,8 +223,7 @@ PY
 ```
 
 그 뒤 `kakao` 설정에 `"account_file": "/실제/절대/경로/Chaejip/.crawler/kakao-account.json"`을
-추가하세요. 숫자 ID 자체를 모르는 경우에는 이 단계만으로 해결되지 않으며 현재 버전의
-자동 설정 범위 밖입니다. 이미 내보낸 TXT 파일이 있다면 아래 파일 수집을 사용할 수 있습니다.
+추가하세요. 자동 설정이 실패했고 숫자 ID도 모르는 경우에는 이 수동 단계만으로 해결되지 않습니다. 이미 내보낸 TXT 파일이 있다면 아래 파일 수집을 사용할 수 있습니다.
 
 ### 수집 범위
 
@@ -251,5 +282,6 @@ uv run python -m unittest discover -s tests -v
 
 테스트는 로컬 HTTP 페이지·Chromium, SQLite, MCP stdio, SQLCipher 암호화 테스트 DB를
 사용합니다. 카카오톡 실계정은 테스트에 필요하지 않습니다. SQLCipher 테스트는 해당 CLI가
-없으면 건너뛰며, 레거시 접근성 추출 테스트에는 Node.js가 필요합니다.
+없으면 건너뜁니다. 최초 설정 도우미 테스트는 Mac의 Command Line Tools가 필요하며,
+레거시 접근성 추출 테스트에는 Node.js가 필요합니다.
 참고한 외부 코드의 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있습니다.

@@ -51,6 +51,8 @@
 ## 카카오톡 원문과 파일
 
 `kakao_db`는 `room_title`, 선택적으로 절대 경로 `account_file`을 사용합니다.
+`--config sources.local.json --setup-kakao kakao`를 실행하면 계정 정보를 검증하고
+`account_file`을 자동으로 설정합니다. 방 이름과 `enabled`는 그대로 유지합니다.
 `text_file`은 UTF-8 TXT의 절대 경로 `path`를 사용합니다.
 설정과 권한 절차는 [README](../README.md#5-카카오톡-원문-수집과-권한)를 참고하세요.
 
