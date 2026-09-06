@@ -25,7 +25,7 @@ def source_guidance(source: dict, config: Path, status: str) -> dict:
         guide.update(required_fields=["room_title"], next_steps=[
             "Mac의 카카오톡에 해당 계정으로 로그인해 대화가 로컬에 저장되어 있어야 합니다. room_title은 선택한 오픈채팅방의 정확한 이름입니다.",
             "SQLCipher가 없으면 brew install sqlcipher로 설치하세요. 앱 데이터 접근이 거부될 때만 실행 앱/터미널의 앱 데이터 접근 또는 전체 디스크 접근 권한을 허용하세요.",
-            "계정 식별 정보를 찾지 못하면 로컬 설정을 확인해야 합니다. account_file은 실제 계정 식별 정보 파일의 절대 경로이며 키나 내용을 답변에 출력하지 마세요.",
+            "계정 ID가 없으면 로컬 CLI에서 --config CONFIG_PATH --setup-kakao SOURCE_ID를 실행하세요. 최초 로컬 탐색은 최대 5분이며 검증 후 account_file을 자동 저장합니다. macOS 권한 승인은 사용자가 처리합니다. ID와 키를 답변에 출력하지 마세요.",
             "collect 후 search_items → get_item으로 필요한 원문만 읽으세요. OCR이나 창 스냅샷으로 대체하지 마세요.",
         ], limitations="이 Mac의 DB에 남은 지정 오픈채팅방의 텍스트가 있는 메시지만 수집합니다. 서버 전체 이력, 가입 전 대화, 삭제/미수신 기록, 첨부파일 원본은 복구하지 않습니다. 비공식 DB 스키마가 바뀌면 실패할 수 있습니다. 회당 5만 메시지·25 MB 상한 초과는 저장 없이 실패합니다.")
     elif source["kind"] == "kakao_window":
@@ -182,8 +182,10 @@ def main():
     parser = argparse.ArgumentParser(description="Local crawler MCP (stdio only)")
     parser.add_argument("--config", type=Path, default=Path("sources.json"))
     parser.add_argument("--data-dir", type=Path, default=Path(".crawler"))
-    parser.add_argument("--login", metavar="SOURCE_ID")
-    parser.add_argument("--doctor", action="store_true")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--login", metavar="SOURCE_ID")
+    actions.add_argument("--doctor", action="store_true")
+    actions.add_argument("--setup-kakao", metavar="SOURCE_ID", help="Verify and save local Kakao account metadata (first run only)")
     args = parser.parse_args()
     args.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
@@ -192,6 +194,12 @@ def main():
             kakao = next((s for s in sources if s["kind"] in ("kakao_window", "kakao_db")), {})
             status = database_status(kakao) if kakao.get("kind") == "kakao_db" else kakao_status()
             print(json.dumps({"transport": "stdio", "sources": len(sources), "kakao": status}, ensure_ascii=False, indent=2))
+        elif args.setup_kakao:
+            from .kakao_setup import setup_account
+            with collection_lock(args.data_dir):
+                result = setup_account(args.config, args.data_dir, args.setup_kakao,
+                                       progress=lambda message: print(message, file=sys.stderr, flush=True))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.login:
             source = next((s for s in sources if s["id"] == args.login), None)
             if source is None:

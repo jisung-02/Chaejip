@@ -1,7 +1,7 @@
 # Third-party notices
 
 Kakao macOS key derivation and schema references are adapted from
-https://github.com/NomaDamas/katok (src/kakao/derive.rs, reader.rs).
+https://github.com/NomaDamas/katok (src/kakao/derive.rs, reader.rs, auth.rs).
 
 MIT License
 

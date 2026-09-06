@@ -53,7 +53,7 @@ def query_database(path, key, sql, timeout=20):
     return json.loads(result.stdout) if result.stdout.strip() else []
 
 
-def resolve_database(account_file=None):
+def local_metadata(account_file=None):
     if platform.system() != 'Darwin':
         raise RuntimeError('Local Kakao database collection requires macOS')
     root = Path.home() / 'Library/Containers/com.kakao.KakaoTalkMac/Data/Library'
@@ -80,15 +80,27 @@ def resolve_database(account_file=None):
         raise PermissionError('Allow the launching AI app/terminal access to Kakao app data or Full Disk Access') from None
     if active_hashes:
         candidates = {uid for uid in candidates if hashlib.sha512(str(uid).encode()).hexdigest() in active_hashes}
-    if not databases or not candidates or len(databases) > 10 or len(candidates) > 20:
-        raise RuntimeError('Could not resolve a bounded set of local Kakao database/account candidates; no recovery attempted')
+    if not databases or len(databases) > 10 or len(candidates) > 20:
+        raise RuntimeError('Could not resolve a bounded set of local Kakao database/account candidates')
+    return databases, candidates, active_hashes
+
+
+def device_uuid():
     result = subprocess.run(['/usr/sbin/ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], capture_output=True, text=True, timeout=5)
     match = re.search(r'"IOPlatformUUID" = "([A-Fa-f0-9-]{36})"', result.stdout)
     if not match:
         raise RuntimeError('Mac device identifier unavailable')
+    return match.group(1)
+
+
+def resolve_database(account_file=None):
+    databases, candidates, _ = local_metadata(account_file)
+    if not candidates:
+        raise RuntimeError("Account ID unavailable; run --setup-kakao SOURCE_ID first")
+    uuid = device_uuid()
     attempts = 0
     for user_id in sorted(candidates):
-        key = derive_key(user_id, match.group(1))
+        key = derive_key(user_id, uuid)
         for database in databases:
             attempts += 1
             if attempts > 8:
