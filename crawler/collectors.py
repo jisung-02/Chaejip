@@ -28,7 +28,7 @@ def load_sources(path: Path) -> list[dict]:
         seen.add(s["id"])
         if not isinstance(s.get("enabled", True), bool):
             raise ValueError("enabled must be a boolean")
-        if s.get("kind") not in ("web", "kakao_window", "kakao_db", "text_file"):
+        if s.get("kind") not in ("web", "slack_web", "kakao_window", "kakao_db", "text_file"):
             raise ValueError(f"Unknown source kind: {s.get('kind')}")
         if s["kind"] == "web":
             web_url(s.get("url", ""))
@@ -42,6 +42,13 @@ def load_sources(path: Path) -> list[dict]:
             for key in ("body_selector", "author_selector", "detail_selector", "next_selector"):
                 if key in s and (not isinstance(s[key], str) or not s[key].strip()):
                     raise ValueError(f"Invalid selector: {key}")
+        elif s["kind"] == "slack_web":
+            from .slack import channel_address
+            channel_address(s.get("url", ""))
+            for key, default, maximum in (("max_messages", 500, 2000), ("max_scrolls", 60, 100)):
+                value = s.get(key, default)
+                if type(value) is not int or not 1 <= value <= maximum:
+                    raise ValueError(f"{key} must be 1..{maximum}")
         elif s["kind"] == "kakao_db":
             if not isinstance(s.get("room_title"), str) or not s["room_title"].strip():
                 raise ValueError("kakao_db requires the exact room_title")

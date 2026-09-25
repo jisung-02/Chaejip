@@ -1,13 +1,14 @@
 # Chaejip · 채집
 
-웹 페이지와 로컬 카카오톡 대화를 수집하고 검색하는 **로컬 stdio MCP 서버**입니다.
-웹은 Playwright의 고정 선택자로, 카카오톡은 Mac의 로컬 DB를 읽어서 수집합니다.
+웹 페이지, Slack 공개 채널 화면, 로컬 카카오톡 대화를 수집하고 검색하는 **로컬 stdio MCP 서버**입니다.
+웹과 Slack은 Playwright로, 카카오톡은 Mac의 로컬 DB를 읽어서 수집합니다.
 수집기 내부에 LLM 호출은 없습니다. AI 클라이언트가 도구 호출·결과를 읽는 토큰은 별도입니다.
 
 ## 지원 환경
 
 - Python 3.11 이상, [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - macOS 또는 Linux: 웹·텍스트 파일 수집
+- macOS 또는 Linux: 로그인한 Chromium의 Slack 공개 채널 화면 수집
 - macOS + 설치된 카카오톡 + SQLCipher: 카카오톡 원문 수집
 - 로컬 stdio MCP 서버를 실행할 수 있는 AI 클라이언트
 
@@ -104,6 +105,7 @@ AI 클라이언트에서 다음처럼 요청합니다.
 | `github` | `microsoft/playwright` 이슈 5개 최초 본문. 댓글 제외 |
 | `reddit`, `linkedin` | 비활성·미검증 선택자 템플릿 |
 | `bleepingcomputer` | 검증 환경에서 HTTP 403이 발생해 비활성인 템플릿 |
+| `slack` | 직접 로그인한 Chromium에서 지정 공개 채널의 화면에 표시된 텍스트 메시지 |
 | `kakao` | 설정 후 활성화하는 Mac 전용 원문 수집 |
 
 웹 수집에는 macOS 화면 기록·손쉬운 사용 권한이 필요하지 않습니다.
@@ -122,7 +124,29 @@ uv run crawler-mcp --config sources.local.json --login github
 
 웹 소스 선택자와 페이지 설정은 [소스 설정 문서](docs/configuration.md)를 참고하세요.
 
-## 5. 카카오톡 원문 수집과 권한
+## 5. Slack 공개 채널 화면 수집
+
+Slack 앱이나 API 토큰 없이 본인이 로그인한 Chromium 화면에서 텍스트를 읽습니다.
+`sources.local.json`의 `slack` 항목에서 `url`을 본인이 접근 가능한 공개 채널의
+`https://app.slack.com/client/T.../C...` 주소로 바꾸세요. 필요하면 `max_messages`와
+`max_scrolls`를 조정합니다.
+
+```sh
+uv run crawler-mcp --config sources.local.json --login slack
+```
+
+열린 브라우저에서 직접 로그인하고 터미널에서 Enter를 누릅니다. 그 뒤 `enabled`를 `true`로
+바꾸고 MCP에서 `collect(source_id="slack")`을 호출합니다. 수집 결과에는 읽은 건수와
+중단 이유가 포함됩니다. `search_items(query="...", source_id="slack")`로 짧은 발췌를
+찾고, 필요한 메시지만 `get_item`으로 읽을 수 있습니다. 로그인 프로필은
+`.crawler/profiles/slack`에, 메시지는 `.crawler/items.sqlite3`에 저장됩니다.
+
+Slack은 가상 스크롤을 사용하므로 채널 전체 이력의 완전 수집을 보장하지 않습니다.
+스레드 답글·파일 원본·삭제된 메시지는 수집하지 않습니다. 화면 구조 변경이나 세션 만료로
+실패할 수 있으며, 로그인·접근 제한을 우회하지 않습니다. 실제 Slack 계정의 화면에서는
+아직 검증하지 않았습니다.
+
+## 6. 카카오톡 원문 수집과 권한
 
 ### 준비
 

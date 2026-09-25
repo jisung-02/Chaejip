@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from crawler.collectors import collect_web, collect_text_file, load_sources
+from crawler.slack import channel_address, extract_visible, scroll_older
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -80,3 +81,40 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
                 load_sources(path)
         path.write_text(json.dumps([self.source]))
         self.assertEqual(load_sources(path)[0]["id"], "fixture")
+
+    async def test_slack_config_requires_a_public_channel_and_bounded_scroll(self):
+        path = self.root / "sources.json"
+        source = {"id": "slack", "kind": "slack_web", "enabled": False,
+                  "url": "https://app.slack.com/client/T123/C456"}
+        path.write_text(json.dumps([source]))
+        self.assertEqual(load_sources(path)[0]["kind"], "slack_web")
+        self.assertEqual(channel_address(source["url"])[1:], ("T123", "C456"))
+        for change in ({"url": "https://evil.test/client/T123/C456"},
+                       {"url": "https://app.slack.com/client/T123/G456"},
+                       {"max_scrolls": 101}, {"max_messages": 0}):
+            path.write_text(json.dumps([source | change]))
+            with self.assertRaises(ValueError):
+                load_sources(path)
+
+    async def test_slack_reads_rendered_messages_and_scrolls_the_message_pane(self):
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            try:
+                page = await browser.new_page()
+                await page.set_content("""<div style="height:120px;overflow-y:auto">
+                    <div style="height:300px"></div>
+                    <div data-qa="message_container"><a data-ts="1720000000.000001"
+                      href="https://x.slack.com/archives/C456/p1720000000000001"></a>
+                      <span data-qa="message_sender_name">Alice</span>
+                      <div data-qa="message-text">첫 줄</div><div data-qa="message-text">둘째 줄</div></div>
+                    </div>""")
+                messages = await extract_visible(page)
+                self.assertEqual(messages[0]["body"], "첫 줄\n둘째 줄")
+                self.assertEqual(messages[0]["ts"], "1720000000.000001")
+                await page.locator('[data-qa="message_container"]').evaluate(
+                    "node => node.parentElement.scrollTop = node.parentElement.scrollHeight")
+                self.assertTrue((await scroll_older(page))["moved"])
+            finally:
+                await browser.close()

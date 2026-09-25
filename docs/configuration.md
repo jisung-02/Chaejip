@@ -48,13 +48,33 @@
 수집 범위 밖 글을 모두 복구하는 백필 기능은 없습니다. 선택자·상세 페이지 오류가 발생하면
 해당 호출은 항목을 저장하지 않습니다.
 
+## Slack 공개 채널 화면
+
+```json
+{
+  "id": "slack",
+  "name": "Slack 공개 채널",
+  "kind": "slack_web",
+  "enabled": false,
+  "url": "https://app.slack.com/client/T123ABC/C123ABC",
+  "max_messages": 500,
+  "max_scrolls": 60
+}
+```
+
+`url`은 본인이 접근 가능한 공개 채널의 웹 주소로 바꿉니다. `max_messages`는
+1~2000, `max_scrolls`는 1~100입니다. `--login slack`으로 직접 로그인한 후
+활성화합니다. 수집기는 메시지 화면을 위로 스크롤하면서 실제 DOM에 표시된 텍스트만
+읽습니다. API 토큰을 사용하지 않으며, 스레드 답글과 전체 이력은 보장하지 않습니다.
+설정 절차는 [README](../README.md#5-slack-공개-채널-화면-수집)를 참고하세요.
+
 ## 카카오톡 원문과 파일
 
 `kakao_db`는 `room_title`, 선택적으로 절대 경로 `account_file`을 사용합니다.
 `--config sources.local.json --setup-kakao kakao`를 실행하면 계정 정보를 검증하고
 `account_file`을 자동으로 설정합니다. 방 이름과 `enabled`는 그대로 유지합니다.
 `text_file`은 UTF-8 TXT의 절대 경로 `path`를 사용합니다.
-설정과 권한 절차는 [README](../README.md#5-카카오톡-원문-수집과-권한)를 참고하세요.
+설정과 권한 절차는 [README](../README.md#6-카카오톡-원문-수집과-권한)를 참고하세요.
 
 ## 레거시 접근성 소스
 

@@ -19,6 +19,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             config.write_text(json.dumps([
                 {"id": "chat", "kind": "text_file", "path": str(export)},
                 {"id": "disabled", "kind": "text_file", "path": str(export), "enabled": False},
+                {"id": "slack", "kind": "slack_web", "url": "https://app.slack.com/client/T123/C456", "enabled": False},
                 {"id": "kakao-test", "kind": "kakao_window", "window_title": ""},
             ]))
             params = StdioServerParameters(command=sys.executable, args=["-m", "crawler", "--config", str(config), "--data-dir", str(root / "data")], env=dict(os.environ))
@@ -36,6 +37,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn("body", first)
                     self.assertEqual((await call("collect", {"source_id": "chat"}))["unchanged"], 1)
                     self.assertEqual((await call("collect", {"source_id": "disabled"}))["status"], "disabled")
+                    slack = await call("collect", {"source_id": "slack"})
+                    self.assertEqual(slack["status"], "disabled")
+                    self.assertEqual(slack["guidance"]["required_fields"], ["url"])
                     self.assertEqual((await call("collect", {"source_id": "missing"}))["status"], "not_found")
                     setup = await call("collect", {"source_id": "kakao-test"})
                     self.assertEqual(setup["status"], "configuration_required")
