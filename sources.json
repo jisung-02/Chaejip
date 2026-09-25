@@ -55,7 +55,9 @@
     "url": "https://app.slack.com/client/T123ABC/C123ABC",
     "max_messages": 500,
     "max_scrolls": 60,
-    "note": "실제 공개 채널 URL로 바꾸고 --login slack으로 직접 로그인한 뒤 활성화하세요. 화면에 표시된 텍스트만 수집하며 스레드 답글은 제외됩니다."
+    "max_threads": 5,
+    "max_thread_scrolls": 5,
+    "note": "실제 공개 채널 URL로 바꾸고 --login slack으로 직접 로그인한 뒤 활성화하세요. 채널 메시지와 제한된 수의 스레드 답글을 수집합니다."
   },
   {
     "id": "reddit",

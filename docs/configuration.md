@@ -58,14 +58,18 @@
   "enabled": false,
   "url": "https://app.slack.com/client/T123ABC/C123ABC",
   "max_messages": 500,
-  "max_scrolls": 60
+  "max_scrolls": 60,
+  "max_threads": 5,
+  "max_thread_scrolls": 5
 }
 ```
 
 `url`은 본인이 접근 가능한 공개 채널의 웹 주소로 바꿉니다. `max_messages`는
-1~2000, `max_scrolls`는 1~100입니다. `--login slack`으로 직접 로그인한 후
-활성화합니다. 수집기는 메시지 화면을 위로 스크롤하면서 실제 DOM에 표시된 텍스트만
-읽습니다. API 토큰을 사용하지 않으며, 스레드 답글과 전체 이력은 보장하지 않습니다.
+1~2000, `max_scrolls`는 1~100, `max_threads`는 0~20,
+`max_thread_scrolls`는 1~20입니다. `max_threads: 0`이면 답글을 건너뜁니다.
+`--login slack`으로 직접 로그인한 후 활성화합니다. 수집기는 채널을 위로
+스크롤하며 로드된 각 메시지를 읽고, 답글이 있는 메시지의 스레드를 열어 답글도 읽습니다.
+API 토큰을 사용하지 않으며, 전체 이력과 모든 답글의 완전 수집은 보장하지 않습니다.
 설정 절차는 [README](../README.md#5-slack-공개-채널-화면-수집)를 참고하세요.
 
 ## 카카오톡 원문과 파일

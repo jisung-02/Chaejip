@@ -45,10 +45,13 @@ def load_sources(path: Path) -> list[dict]:
         elif s["kind"] == "slack_web":
             from .slack import channel_address
             channel_address(s.get("url", ""))
-            for key, default, maximum in (("max_messages", 500, 2000), ("max_scrolls", 60, 100)):
+            for key, default, minimum, maximum in (("max_messages", 500, 1, 2000),
+                                                    ("max_scrolls", 60, 1, 100),
+                                                    ("max_threads", 5, 0, 20),
+                                                    ("max_thread_scrolls", 5, 1, 20)):
                 value = s.get(key, default)
-                if type(value) is not int or not 1 <= value <= maximum:
-                    raise ValueError(f"{key} must be 1..{maximum}")
+                if type(value) is not int or not minimum <= value <= maximum:
+                    raise ValueError(f"{key} must be {minimum}..{maximum}")
         elif s["kind"] == "kakao_db":
             if not isinstance(s.get("room_title"), str) or not s["room_title"].strip():
                 raise ValueError("kakao_db requires the exact room_title")
