@@ -2,10 +2,11 @@
 
 import asyncio
 import re
+import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Error as PlaywrightError, async_playwright, TimeoutError as PlaywrightTimeout
 
 
 CHANNEL_PATH = re.compile(r"^/client/(T[A-Z0-9]+|E[A-Z0-9]+)/(C[A-Z0-9]+)(?:/)?$")
@@ -99,8 +100,13 @@ def message_record(message: dict, team: str, channel: str, thread_ts: str = "") 
             "permalink": message["permalink"]}
 
 
+def out_of_time(deadline: float | None, clock=time.monotonic) -> bool:
+    return deadline is not None and clock() >= deadline
+
+
 async def collect_thread(page, team: str, channel: str, parent_ts: str,
-                         max_scrolls: int, wait_ms: int) -> tuple[list[dict], str]:
+                         max_scrolls: int, wait_ms: int, deadline: float | None = None,
+                         clock=time.monotonic) -> tuple[list[dict], str]:
     replies: dict[str, dict] = {}
     idle = 0
     stop_reason = "scroll_limit"
@@ -112,6 +118,9 @@ async def collect_thread(page, team: str, channel: str, parent_ts: str,
                 if record["ts"] not in replies:
                     added += 1
                 replies[record["ts"]] = record
+        if out_of_time(deadline, clock):
+            stop_reason = "time_budget"
+            break
         movement = await scroll_older(page, "thread")
         if not movement["found"]:
             stop_reason = "scroll_pane_missing"
@@ -126,8 +135,12 @@ async def collect_thread(page, team: str, channel: str, parent_ts: str,
 
 async def collect_from_page(page, team: str, channel: str, max_messages: int = 500,
                             max_scrolls: int = 60, max_threads: int = 5,
-                            max_thread_scrolls: int = 5, wait_ms: int = 650) -> tuple[list[dict], dict]:
-    """Walk the channel timeline and inspect threads while parents are visible."""
+                            max_thread_scrolls: int = 5, wait_ms: int = 650,
+                            deadline: float | None = None, clock=time.monotonic) -> tuple[list[dict], dict]:
+    """Walk the channel timeline and inspect threads while parents are visible.
+
+    Stops at the top of the channel, at max_messages, after max_scrolls, or when the
+    monotonic deadline passes (returning what was read so far)."""
     found: dict[str, dict] = {}
     visited_threads: set[str] = set()
     thread_failures = 0
@@ -148,7 +161,7 @@ async def collect_from_page(page, team: str, channel: str, max_messages: int = 5
             parent_ts = message["ts"]
             if not message["has_replies"] or parent_ts in visited_threads:
                 continue
-            if len(visited_threads) >= max_threads or len(found) >= max_messages:
+            if len(visited_threads) >= max_threads or len(found) >= max_messages or out_of_time(deadline, clock):
                 skipped_threads.add(parent_ts)
                 continue
             visited_threads.add(parent_ts)
@@ -156,13 +169,16 @@ async def collect_from_page(page, team: str, channel: str, max_messages: int = 5
                 thread_failures += 1
                 continue
             replies, thread_stop = await collect_thread(page, team, channel, parent_ts,
-                                                        max_thread_scrolls, wait_ms)
+                                                        max_thread_scrolls, wait_ms, deadline, clock)
             if thread_stop != "top_or_no_more_messages":
                 thread_scroll_limits += 1
             for reply in replies:
                 found[reply["ts"]] = reply
         if len(found) >= max_messages:
             stop_reason = "message_limit"
+            break
+        if out_of_time(deadline, clock):
+            stop_reason = "time_budget"
             break
         movement = await scroll_older(page, "channel")
         if not movement["found"]:
@@ -208,19 +224,207 @@ async def collect_channel(url: str, profile: Path, max_messages: int = 500,
             if current.hostname != "app.slack.com" or not match or match.groups() != (team, channel):
                 raise RuntimeError("Slack opened a different channel; collection stopped")
             return await collect_from_page(page, team, channel, max_messages, max_scrolls,
-                                           max_threads, max_thread_scrolls, wait_ms)
+                                           max_threads, max_thread_scrolls, wait_ms,
+                                           deadline=time.monotonic() + READ_BUDGET_SECONDS)
         finally:
             await context.close()
 
 
-async def login(profile: Path) -> None:
+async def login(profile: Path, workspace: str | None = None) -> None:
+    url = "https://app.slack.com/client/"
+    if workspace:
+        url = f"https://{parse_target(workspace, '#general')['domain']}.slack.com/"
     profile.mkdir(parents=True, exist_ok=True, mode=0o700)
     profile.chmod(0o700)
     async with async_playwright() as playwright:
         context = await playwright.chromium.launch_persistent_context(str(profile), headless=False)
         try:
             page = context.pages[0] if context.pages else await context.new_page()
-            await page.goto("https://app.slack.com/client/", wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.to_thread(input, "브라우저에서 Slack에 직접 로그인한 뒤 Enter를 누르세요: ")
         finally:
             await context.close()
+
+
+TEAM_ID = re.compile(r"[TE][A-Z0-9]{6,20}")
+PUBLIC_CHANNEL_ID = re.compile(r"C[A-Z0-9]{6,20}")
+CHANNEL_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}")
+DOMAIN = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
+ARCHIVE_PATH = re.compile(r"^/archives/(C[A-Z0-9]{6,20})(?:/.*)?$")
+
+
+def parse_target(workspace: str, channel: str) -> dict:
+    """Turn user-supplied workspace/channel text into a bounded Slack web target.
+
+    workspace: "community", "community.slack.com", a workspace URL, or a team ID (T...).
+    channel: a public channel ID (C...), a channel link, or a channel name ("#general").
+    """
+    if not isinstance(workspace, str) or not isinstance(channel, str):
+        raise ValueError("workspace and channel must be text")
+    workspace, channel = workspace.strip(), channel.strip()
+    target = {"team": "", "domain": "", "channel": "", "name": ""}
+    if TEAM_ID.fullmatch(workspace):
+        target["team"] = workspace
+    else:
+        host = urlsplit(workspace if "://" in workspace else "https://" + workspace).hostname or ""
+        host = host.lower().removesuffix(".slack.com")
+        if not DOMAIN.fullmatch(host) or host in ("app", "api", "www"):
+            raise ValueError("workspace must be a Slack workspace domain like 'community' or 'community.slack.com', or a team ID T...")
+        target["domain"] = host
+    if channel.startswith("https://"):
+        parts = urlsplit(channel)
+        host = (parts.hostname or "").lower()
+        client = OPEN_CHANNEL_PATH.match(parts.path) if host == "app.slack.com" else None
+        archive = ARCHIVE_PATH.match(parts.path) if host.endswith(".slack.com") else None
+        if client:
+            team, target["channel"] = client.groups()
+            if target["team"] and target["team"] != team:
+                raise ValueError("Channel link belongs to a different workspace")
+            target["team"] = team
+        elif archive:
+            if target["domain"] and host != f"{target['domain']}.slack.com":
+                raise ValueError("Channel link belongs to a different workspace")
+            target["domain"] = target["domain"] or host.removesuffix(".slack.com")
+            target["channel"] = archive.group(1)
+        else:
+            raise ValueError("Channel link must look like https://<workspace>.slack.com/archives/C... or https://app.slack.com/client/T.../C...")
+    elif PUBLIC_CHANNEL_ID.fullmatch(channel):
+        target["channel"] = channel
+    elif re.fullmatch(r"[GD][A-Z0-9]{6,20}", channel):
+        raise ValueError("Only public channels (C...) can be read; private channels and DMs are not supported")
+    elif CHANNEL_NAME.fullmatch(channel.lstrip("#").lower()):
+        if not target["domain"]:
+            raise ValueError("To use a channel name, give the workspace domain (e.g. 'community'); with a team ID give the channel ID C...")
+        target["name"] = channel.lstrip("#").lower()
+    else:
+        raise ValueError("channel must be a public channel ID C..., a channel link, or a channel name like #general")
+    if target["channel"] and not PUBLIC_CHANNEL_ID.fullmatch(target["channel"]):
+        raise ValueError("Only public channels (C...) can be read")
+    return target
+
+
+def target_url(target: dict) -> str:
+    if target["team"] and target["channel"]:
+        return f"https://app.slack.com/client/{target['team']}/{target['channel']}"
+    if target["domain"]:
+        return f"https://{target['domain']}.slack.com/archives/{target['channel'] or target['name']}"
+    raise ValueError("Give the workspace domain or a channel link")
+
+
+def is_signin(url: str) -> bool:
+    parts = urlsplit(url)
+    return (parts.hostname or "").endswith("slack.com") and ("signin" in parts.path or parts.path.startswith("/ssb/"))
+
+
+def desktop_deeplink(url: str) -> tuple[str, str] | None:
+    """Slack's /archives page hands off to slack://channel?team=T...&id=C...; read the IDs from it."""
+    parts = urlsplit(url)
+    if parts.scheme != "slack" or parts.netloc != "channel":
+        return None
+    query = parse_qs(parts.query)
+    team, channel = query.get("team", [""])[0], query.get("id", [""])[0]
+    if TEAM_ID.fullmatch(team) and re.fullmatch(r"[CGD][A-Z0-9]{6,20}", channel):
+        return team, channel
+    return None
+
+
+async def open_target(page, target: dict, timeout_ms: int = 20000) -> tuple[str, str]:
+    """Navigate to the requested channel and confirm the web client opened exactly that channel."""
+    handoff: list[tuple[str, str]] = []
+
+    def on_request(request) -> None:
+        found = desktop_deeplink(request.url)
+        if found:
+            handoff.append(found)
+
+    def settled(url: str) -> bool:
+        parts = urlsplit(url)
+        return (parts.hostname == "app.slack.com" and bool(OPEN_CHANNEL_PATH.match(parts.path))) or is_signin(url)
+
+    async def wait(ms: int, until_handoff: bool = False) -> bool:
+        for _ in range(max(1, ms // 250)):
+            if settled(page.url) or (until_handoff and handoff):
+                return True
+            await asyncio.sleep(0.25)
+        return settled(page.url)
+
+    async def go(url: str) -> None:
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except PlaywrightError as exc:
+            # The slack:// desktop hand-off is aborted by Chrome; the web flow continues afterwards.
+            if "ERR_ABORTED" not in str(exc):
+                raise
+
+    page.on("request", on_request)
+    await go(target_url(target))
+    if not await wait(min(10000, timeout_ms), until_handoff=True) or (handoff and not settled(page.url)):
+        if handoff:
+            team, channel = handoff[-1]
+            await go(f"https://app.slack.com/client/{team}/{channel}")
+        else:
+            # Some pages show an "open in app / use the browser" choice; follow only its web-client link.
+            link = page.locator('a[href*="app.slack.com/client/"]').first
+            if await link.count():
+                href = await link.get_attribute("href") or ""
+                if urlsplit(href).scheme == "https" and urlsplit(href).hostname == "app.slack.com":
+                    await go(href)
+        await wait(timeout_ms)
+    current = urlsplit(page.url)
+    if is_signin(page.url):
+        hint = target["domain"] or "WORKSPACE"
+        raise PermissionError(f"Slack 로그인이 필요합니다. 터미널에서 --slack-login {hint}로 직접 로그인하세요.")
+    match = OPEN_CHANNEL_PATH.match(current.path) if current.hostname == "app.slack.com" else None
+    if not match:
+        raise RuntimeError("Slack 채널 화면을 열지 못했습니다. 워크스페이스·채널을 확인하거나 채널 ID(C...)나 채널 링크를 넣어 보세요.")
+    team, channel = match.groups()
+    if (target["team"] and team != target["team"]) or (target["channel"] and channel != target["channel"]):
+        raise RuntimeError("Slack opened a different workspace or channel; collection stopped")
+    if not PUBLIC_CHANNEL_ID.fullmatch(channel):
+        raise RuntimeError("Only public channels (C...) can be read")
+    return team, channel
+
+
+def signin_url(workspace: str | None) -> str:
+    if not workspace:
+        return "https://app.slack.com/client/"
+    return f"https://{parse_target(workspace, '#general')['domain']}.slack.com/"
+
+
+READ_BUDGET_SECONDS = 95
+MAX_TARGET_SCROLLS = 2000
+
+
+async def read_target(workspace: str, channel: str, profile: Path, max_messages: int = 200,
+                      max_threads: int = 5) -> tuple[list[dict], dict]:
+    """Open a user-chosen public channel in a new tab of Chaejip's Chrome, read it, close the tab."""
+    from . import chrome
+
+    target = parse_target(workspace, channel)
+    if not profile.is_dir():
+        raise PermissionError("Chaejip용 Chrome 프로필이 없습니다. 터미널에서 --slack-login WORKSPACE로 먼저 로그인하세요.")
+    port = chrome.chrome_port()
+    # collect() stops at 120 s; leave room to close the tab, stop Chrome and save.
+    deadline = time.monotonic() + READ_BUDGET_SECONDS
+    started = await asyncio.to_thread(chrome.ensure_running, profile, port)
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.connect_over_cdp(chrome.endpoint(port))
+            if not browser.contexts:
+                raise RuntimeError("Chrome 연결에 브라우저 프로필이 없습니다")
+            page = await browser.contexts[0].new_page()
+            try:
+                team, channel_id = await open_target(page, target)
+                try:
+                    await page.locator(MESSAGE_SELECTOR).first.wait_for(state="attached", timeout=20000)
+                except PlaywrightTimeout as exc:
+                    raise RuntimeError("채널은 열렸지만 메시지가 표시되지 않았습니다. Slack 화면 구조를 확인하세요.") from exc
+                label = (await page.title()).split(" - ")[0].strip()[:200]
+                messages, details = await collect_from_page(
+                    page, team, channel_id, max_messages=max_messages,
+                    max_scrolls=MAX_TARGET_SCROLLS, max_threads=max_threads, deadline=deadline)
+                return messages, details | {"team": team, "channel": channel_id, "channel_label": label}
+            finally:
+                await page.close()
+    finally:
+        await asyncio.to_thread(chrome.stop, started)

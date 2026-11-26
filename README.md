@@ -86,6 +86,7 @@ AI 클라이언트에서 다음처럼 요청합니다.
 | `list_sources(source_id=null, include_guidance=false)` | 등록된 소스 상태. `include_guidance=true`면 설정 경로·절차도 반환 |
 | `collect(source_id)` | 수집·저장 후 건수와 상태 반환. 본문은 반환하지 않음 |
 | `search_items(query="", source_id=null, since=null, limit=20)` | 저장된 제목·본문·작성자에서 문자 부분 일치 검색. 최대 100건, 발췌 300자 |
+| `collect_slack(workspace, channel, max_messages=200, max_threads=5)` | 지정한 Slack 공개 채널을 Chaejip 전용 브라우저에서 읽기 전용으로 수집. 건수와 `source_id` 반환 |
 | `get_item(id, offset=0, max_chars=8000)` | 항목 본문 조회. 최대 20,000자, 나머지는 `next_offset`으로 이어 읽기 |
 
 예: `collect(source_id="geeknews")` → `search_items(query="Python", source_id="geeknews")`
@@ -125,6 +126,57 @@ uv run crawler-mcp --config sources.local.json --login github
 웹 소스 선택자와 페이지 설정은 [소스 설정 문서](docs/configuration.md)를 참고하세요.
 
 ## 5. Slack 공개 채널 메시지 수집
+
+### 5-1. 호출할 때 워크스페이스·채널 지정 (`collect_slack`)
+
+커뮤니티·오픈 Slack의 **공개 채널**을, AI가 컴퓨터 사용 없이 도구 호출 하나로 읽게 합니다.
+설치된 **Google Chrome**을 Chaejip 전용 프로필(`.crawler/profiles/slack-chrome`)로 띄우고,
+수집할 때마다 그 Chrome에 **새 탭 하나**를 열어 Slack 웹 화면을 읽은 뒤 탭을 닫습니다.
+Chrome은 자동화 옵션 없이 일반 브라우저로 실행되므로 Google 로그인도 평소처럼 할 수 있습니다.
+Slack API나 토큰은 쓰지 않습니다. 메시지 입력창·전송·반응·채널 참여 버튼은 누르지 않으며,
+답글을 읽으려고 스레드 창을 여는 것만 합니다. 평소 쓰는 Chrome 프로필과는 분리되어 있습니다.
+
+**1) 최초 1회 로그인**
+
+```sh
+uv run crawler-mcp --config sources.local.json --slack-login community.slack.com
+```
+
+새 Chrome 창이 열리면 직접 로그인합니다(Google 로그인 가능). 명령은 바로 끝나고, 로그인 후 창은
+그대로 두거나 닫아도 됩니다. 여러 워크스페이스는 같은 명령을 워크스페이스마다 실행하면 한 프로필에
+함께 로그인됩니다. 세션이 만료되면 다시 실행합니다.
+
+- 수집할 때 Chaejip용 Chrome이 열려 있으면 그 창에 탭을 열고, 닫혀 있으면 창을 띄웠다가 끝나면 닫습니다.
+- Chrome은 `127.0.0.1:9333` DevTools 포트로 연결합니다. 이 포트가 열려 있는 동안에는 같은 Mac의 다른
+  프로그램도 이 Chrome을 조작할 수 있으니, 쓰지 않을 때는 Chaejip용 Chrome 창을 닫아 두세요.
+  포트는 `CHAEJIP_CHROME_PORT`, Chrome 경로는 `CHAEJIP_CHROME` 환경변수로 바꿀 수 있습니다.
+
+**2) AI에게 요청**
+
+> community.slack.com 워크스페이스의 #general 채널 최근 메시지 수집해서 "릴리스" 얘기 찾아줘.
+
+AI는 `collect_slack(workspace="community", channel="#general")` →
+`search_items(query="릴리스", source_id="slack-T…-C…")` → `get_item(id=…)` 순서로 호출합니다.
+
+| 인자 | 받는 형식 |
+|---|---|
+| `workspace` | `community`, `community.slack.com`, 워크스페이스 URL, 또는 팀 ID `T…` |
+| `channel` | `#general`, 채널 ID `C…`, 또는 채널 링크(채널 이름 우클릭 → 링크 복사) |
+| `max_messages` | 1~1000, 기본 200. 최신 메시지부터 |
+| `max_threads` | 0~20, 기본 5. 답글을 읽을 스레드 수 |
+
+- 한 번 호출에 약 95초 동안 위로 스크롤하며 읽고, 시간이 되면 그때까지 읽은 메시지를 저장합니다
+  (`stop_reason: "time_budget"`). 늘 최신 메시지부터 읽으므로, 더 오래된 메시지까지 가려면
+  `max_threads`를 줄여 스레드에 쓰는 시간을 줄이세요. 맨 위에 닿거나 `max_messages`를 채우면 먼저 끝납니다.
+- 공개 채널(`C…`)만 읽습니다. 비공개 채널(`G…`)·DM(`D…`)은 거부합니다.
+- 열린 화면의 워크스페이스·채널이 요청과 다르거나 로그인 화면으로 가면 저장하지 않고 멈춥니다.
+- 채널 이름으로 열리지 않으면 채널 링크나 채널 ID로 다시 호출하세요.
+- 채널을 열면 Slack에서 해당 채널을 읽음으로 표시할 수 있습니다.
+- 가상 스크롤 화면을 읽으므로 전체 이력·모든 답글의 완전 수집은 보장하지 않습니다.
+  Slack 화면 구조가 바뀌면 실패할 수 있습니다. 실제 Slack 계정 화면에서는 아직 검증하지 않았습니다.
+- 커뮤니티 규칙(Code of Conduct)에 수집·봇 금지 조항이 없는지 먼저 확인하세요.
+
+### 5-2. 설정 파일에 고정한 채널 (`slack_web`)
 
 Slack 앱이나 API 토큰 없이 본인이 로그인한 Chromium 화면에서 텍스트를 읽습니다.
 `sources.local.json`의 `slack` 항목에서 `url`을 본인이 접근 가능한 공개 채널의
