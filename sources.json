@@ -48,6 +48,18 @@
     "note": "macOS 전용입니다. 계정·앱 데이터 접근 권한·room_title을 설정한 뒤 활성화하세요."
   },
   {
+    "id": "slack",
+    "name": "Slack 공개 채널 화면",
+    "kind": "slack_web",
+    "enabled": false,
+    "url": "https://app.slack.com/client/T123ABC/C123ABC",
+    "max_messages": 500,
+    "max_scrolls": 60,
+    "max_threads": 5,
+    "max_thread_scrolls": 5,
+    "note": "실제 공개 채널 URL로 바꾸고 --login slack으로 직접 로그인한 뒤 활성화하세요. 채널 메시지와 제한된 수의 스레드 답글을 수집합니다."
+  },
+  {
     "id": "reddit",
     "name": "Reddit (설정 템플릿, 미검증)",
     "kind": "web",

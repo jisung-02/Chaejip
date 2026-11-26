@@ -48,13 +48,37 @@
 수집 범위 밖 글을 모두 복구하는 백필 기능은 없습니다. 선택자·상세 페이지 오류가 발생하면
 해당 호출은 항목을 저장하지 않습니다.
 
+## Slack 공개 채널 화면
+
+```json
+{
+  "id": "slack",
+  "name": "Slack 공개 채널",
+  "kind": "slack_web",
+  "enabled": false,
+  "url": "https://app.slack.com/client/T123ABC/C123ABC",
+  "max_messages": 500,
+  "max_scrolls": 60,
+  "max_threads": 5,
+  "max_thread_scrolls": 5
+}
+```
+
+`url`은 본인이 접근 가능한 공개 채널의 웹 주소로 바꿉니다. `max_messages`는
+1~2000, `max_scrolls`는 1~100, `max_threads`는 0~20,
+`max_thread_scrolls`는 1~20입니다. `max_threads: 0`이면 답글을 건너뜁니다.
+`--login slack`으로 직접 로그인한 후 활성화합니다. 수집기는 채널을 위로
+스크롤하며 로드된 각 메시지를 읽고, 답글이 있는 메시지의 스레드를 열어 답글도 읽습니다.
+API 토큰을 사용하지 않으며, 전체 이력과 모든 답글의 완전 수집은 보장하지 않습니다.
+설정 절차는 [README](../README.md#5-2-설정-파일에-고정한-채널-slack_web)를 참고하세요.
+
 ## 카카오톡 원문과 파일
 
 `kakao_db`는 `room_title`, 선택적으로 절대 경로 `account_file`을 사용합니다.
 `--config sources.local.json --setup-kakao kakao`를 실행하면 계정 정보를 검증하고
 `account_file`을 자동으로 설정합니다. 방 이름과 `enabled`는 그대로 유지합니다.
 `text_file`은 UTF-8 TXT의 절대 경로 `path`를 사용합니다.
-설정과 권한 절차는 [README](../README.md#5-카카오톡-원문-수집과-권한)를 참고하세요.
+설정과 권한 절차는 [README](../README.md#6-카카오톡-원문-수집과-권한)를 참고하세요.
 
 ## 레거시 접근성 소스
 

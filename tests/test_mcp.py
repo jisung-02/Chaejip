@@ -19,6 +19,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             config.write_text(json.dumps([
                 {"id": "chat", "kind": "text_file", "path": str(export)},
                 {"id": "disabled", "kind": "text_file", "path": str(export), "enabled": False},
+                {"id": "slack", "kind": "slack_web", "url": "https://app.slack.com/client/T123/C456", "enabled": False},
                 {"id": "kakao-test", "kind": "kakao_window", "window_title": ""},
             ]))
             params = StdioServerParameters(command=sys.executable, args=["-m", "crawler", "--config", str(config), "--data-dir", str(root / "data")], env=dict(os.environ))
@@ -26,7 +27,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 async with ClientSession(read, write) as client:
                     await client.initialize()
                     catalog = await client.list_tools()
-                    self.assertEqual({t.name for t in catalog.tools}, {"list_sources", "collect", "search_items", "get_item"})
+                    self.assertEqual({t.name for t in catalog.tools}, {"list_sources", "collect", "collect_slack", "search_items", "get_item"})
                     async def call(name, args):
                         result = await client.call_tool(name, args)
                         self.assertFalse(result.isError, result.content)
@@ -36,7 +37,15 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn("body", first)
                     self.assertEqual((await call("collect", {"source_id": "chat"}))["unchanged"], 1)
                     self.assertEqual((await call("collect", {"source_id": "disabled"}))["status"], "disabled")
+                    slack = await call("collect", {"source_id": "slack"})
+                    self.assertEqual(slack["status"], "disabled")
+                    self.assertEqual(slack["guidance"]["required_fields"], ["url"])
                     self.assertEqual((await call("collect", {"source_id": "missing"}))["status"], "not_found")
+                    bad = await call("collect_slack", {"workspace": "community", "channel": "G01ABCDEF"})
+                    self.assertEqual(bad["status"], "invalid_arguments")
+                    login = await call("collect_slack", {"workspace": "community", "channel": "#general"})
+                    self.assertEqual(login["status"], "login_required")
+                    self.assertIn("--slack-login", login["message"])
                     setup = await call("collect", {"source_id": "kakao-test"})
                     self.assertEqual(setup["status"], "configuration_required")
                     self.assertTrue(Path(setup["guidance"]["config_path"]).samefile(config))
